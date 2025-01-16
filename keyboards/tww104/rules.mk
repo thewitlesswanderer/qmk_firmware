@@ -20,5 +20,8 @@
 # RGB Matrix is enabled at the revision level,
 # while we use the regular RGB underglow for testing
 
+SRC += secondary_core.c
+
 POINTING_DEVICE_ENABLE = yes
 POINTING_DEVICE_DRIVER = custom
+

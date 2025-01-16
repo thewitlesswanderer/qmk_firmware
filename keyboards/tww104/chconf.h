@@ -1,0 +1,32 @@
+//
+// Created by gramar on 3/14/24.
+//
+
+#pragma once
+
+#include_next "chconf.h"
+
+#define CH_CFG_SMP_MODE TRUE
+
+//#undef CH_DBG_STATISTICS
+//#define CH_DBG_STATISTICS FALSE
+
+//#undef CH_DBG_SYSTEM_STATE_CHECK
+//#define CH_DBG_SYSTEM_STATE_CHECK TRUE
+
+//#undef CH_DBG_ENABLE_CHECKS
+//#define CH_DBG_ENABLE_CHECKS TRUE
+
+//#undef CH_DBG_ENABLE_ASSERTS
+//#define CH_DBG_ENABLE_ASSERTS TRUE
+
+//#undef CH_DBG_TRACE_MASK
+//#define CH_DBG_TRACE_MASK CH_DBG_TRACE_MASK_ALL
+
+//#undef CH_DBG_ENABLE_STACK_CHECK
+//#define CH_DBG_ENABLE_STACK_CHECK TRUE
+
+//#undef CH_DBG_FILL_THREADS
+//#define CH_DBG_FILL_THREADS TRUE
+
+

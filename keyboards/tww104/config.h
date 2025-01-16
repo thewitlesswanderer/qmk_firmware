@@ -1,0 +1,6 @@
+#pragma once
+
+#ifdef CRT0_EXTRA_CORES_NUMBER
+#undef CRT0_EXTRA_CORES_NUMBER
+#endif
+#define CRT0_EXTRA_CORES_NUMBER 1
