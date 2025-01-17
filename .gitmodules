@@ -28,3 +28,6 @@
 [submodule "keyboards/tww104/lib/Pico-PIO-USB"]
 	path = keyboards/tww104/lib/Pico-PIO-USB
 	url = https://github.com/thewitlesswanderer/Pico-PIO-USB.git
+[submodule "keyboards/tww104/lib/tinyusb"]
+	path = keyboards/tww104/lib/tinyusb
+	url = https://github.com/thewitlesswanderer/tinyusb.git
