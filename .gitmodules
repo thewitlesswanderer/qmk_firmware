@@ -28,6 +28,3 @@
 [submodule "keyboards/tww104/lib/tinyusb"]
 	path = keyboards/tww104/lib/tinyusb
 	url = https://github.com/thewitlesswanderer/tinyusb.git
-[submodule "lib/lib/pico-sdk"]
-	path = lib/lib/pico-sdk
-	url = https://github.com/thewitlesswanderer/pico-sdk.git
