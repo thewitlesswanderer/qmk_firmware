@@ -75,4 +75,4 @@ void ws2812_init(void);
  *         - Send out the LED data
  *         - Wait 50us to reset the LEDs
  */
-void ws2812_setleds(rgb_led_t *ledarray, uint16_t number_of_leds);
+void ws2812_setleds(rgb_led_t *ledarray, uint16_t number_of_leds, uint8_t string_of_leds);

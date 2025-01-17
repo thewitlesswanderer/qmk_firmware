@@ -157,7 +157,7 @@ static void init(void) {
 
 static void flush(void) {
     if (ws2812_dirty) {
-        ws2812_setleds(rgb_matrix_ws2812_array, WS2812_LED_COUNT);
+        ws2812_setleds(rgb_matrix_ws2812_array, WS2812_LED_COUNT, WS2812_MATRIX_STRING);
         ws2812_dirty = false;
     }
 }
