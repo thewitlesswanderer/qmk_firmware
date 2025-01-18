@@ -20,6 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "quantum/color.h"
+
 /* FIXME: Add doxygen comments here. */
 
 #ifdef __cplusplus
@@ -47,6 +49,9 @@ void led_suspend(void);
 void led_wakeup(void);
 
 void led_task(void);
+
+void set_status_led(int i, uint8_t r, uint8_t g, uint8_t b);
+void status_led_flush(void);
 
 /* Callbacks */
 bool led_update_user(led_t led_state);

@@ -19,6 +19,33 @@
 #include "debug.h"
 #include "gpio.h"
 
+#include "ws2812.h"
+
+rgb_led_t led_status_ws2812_array[WS2812_LED_COUNT_2];
+bool      status_ws2812_dirty = false;
+
+void status_led_flush(void) {
+    if (status_ws2812_dirty) {
+        ws2812_setleds(led_status_ws2812_array, WS2812_LED_COUNT_2, STATUS_WS2812_MATRIX_STRING);
+        status_ws2812_dirty = false;
+    }
+}
+
+// Set an led in the buffer to a color
+void set_status_led(int i, uint8_t r, uint8_t g, uint8_t b) {
+    if (led_status_ws2812_array[i].r == r && led_status_ws2812_array[i].g == g && led_status_ws2812_array[i].b == b) {
+        return;
+    }
+
+    status_ws2812_dirty = true;
+
+    led_status_ws2812_array[i].r = r;
+    led_status_ws2812_array[i].g = g;
+    led_status_ws2812_array[i].b = b;
+
+}
+
+
 #ifdef BACKLIGHT_CAPS_LOCK
 #    ifdef BACKLIGHT_ENABLE
 #        include "backlight.h"
@@ -92,15 +119,36 @@ __attribute__((weak)) void led_update_ports(led_t led_state) {
     // invert the whole thing to avoid having to conditionally !led_state.x later
     led_state.raw = ~led_state.raw;
 #endif
+    if (led_state.num_lock) {
+      set_status_led(LED_NUM_LOCK_STRING, LED_STATUS_COLOR);
+    } else {
+      set_status_led(LED_NUM_LOCK_STRING, RGB_BLACK);
+    }
+
+    if (led_state.caps_lock) {
+      set_status_led(LED_CAPS_LOCK_STRING, LED_STATUS_COLOR);
+    } else {
+      set_status_led(LED_CAPS_LOCK_STRING, RGB_BLACK);
+    }
+
+    if (led_state.scroll_lock) {
+      set_status_led(LED_SCROLL_LOCK_STRING, LED_STATUS_COLOR);
+    } else {
+      set_status_led(LED_SCROLL_LOCK_STRING, RGB_BLACK);
+    }
+
+    status_led_flush();
 
 #ifdef LED_NUM_LOCK_PIN
     gpio_write_pin(LED_NUM_LOCK_PIN, led_state.num_lock);
 #endif
 #ifdef LED_CAPS_LOCK_PIN
     gpio_write_pin(LED_CAPS_LOCK_PIN, led_state.caps_lock);
+
 #endif
 #ifdef LED_SCROLL_LOCK_PIN
     gpio_write_pin(LED_SCROLL_LOCK_PIN, led_state.scroll_lock);
+
 #endif
 #ifdef LED_COMPOSE_PIN
     gpio_write_pin(LED_COMPOSE_PIN, led_state.compose);
@@ -108,31 +156,32 @@ __attribute__((weak)) void led_update_ports(led_t led_state) {
 #ifdef LED_KANA_PIN
     gpio_write_pin(LED_KANA_PIN, led_state.kana);
 #endif
+
 }
 
 /** \brief Initialise any LED related hardware and/or state
  */
 __attribute__((weak)) void led_init_ports(void) {
-#ifdef LED_NUM_LOCK_PIN
-    gpio_set_pin_output(LED_NUM_LOCK_PIN);
-    gpio_write_pin(LED_NUM_LOCK_PIN, !LED_PIN_ON_STATE);
-#endif
-#ifdef LED_CAPS_LOCK_PIN
-    gpio_set_pin_output(LED_CAPS_LOCK_PIN);
-    gpio_write_pin(LED_CAPS_LOCK_PIN, !LED_PIN_ON_STATE);
-#endif
-#ifdef LED_SCROLL_LOCK_PIN
-    gpio_set_pin_output(LED_SCROLL_LOCK_PIN);
-    gpio_write_pin(LED_SCROLL_LOCK_PIN, !LED_PIN_ON_STATE);
-#endif
-#ifdef LED_COMPOSE_PIN
-    gpio_set_pin_output(LED_COMPOSE_PIN);
-    gpio_write_pin(LED_COMPOSE_PIN, !LED_PIN_ON_STATE);
-#endif
-#ifdef LED_KANA_PIN
-    gpio_set_pin_output(LED_KANA_PIN);
-    gpio_write_pin(LED_KANA_PIN, !LED_PIN_ON_STATE);
-#endif
+    #ifdef LED_NUM_LOCK_PIN
+        //gpio_set_pin_output(LED_NUM_LOCK_PIN);
+        //gpio_write_pin(LED_NUM_LOCK_PIN, !LED_PIN_ON_STATE);
+    #endif
+    #ifdef LED_CAPS_LOCK_PIN
+        //gpio_set_pin_output(LED_CAPS_LOCK_PIN);
+        //gpio_write_pin(LED_CAPS_LOCK_PIN, !LED_PIN_ON_STATE);
+    #endif
+    #ifdef LED_SCROLL_LOCK_PIN
+        //gpio_set_pin_output(LED_SCROLL_LOCK_PIN);
+        //gpio_write_pin(LED_SCROLL_LOCK_PIN, !LED_PIN_ON_STATE);
+    #endif
+    #ifdef LED_COMPOSE_PIN
+        //gpio_set_pin_output(LED_COMPOSE_PIN);
+        //gpio_write_pin(LED_COMPOSE_PIN, !LED_PIN_ON_STATE);
+    #endif
+    #ifdef LED_KANA_PIN
+        //gpio_set_pin_output(LED_KANA_PIN);
+        //gpio_write_pin(LED_KANA_PIN, !LED_PIN_ON_STATE);
+    #endif
 }
 
 /** \brief Entrypoint for protocol to LED binding
