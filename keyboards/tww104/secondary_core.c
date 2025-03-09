@@ -86,11 +86,14 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   uint16_t vid, pid;
   tuh_vid_pid_get(dev_addr, &vid, &pid);
 
+  //chprintf((BaseSequentialStream*)&SIOD0,"VID:%x PID:%x\n", vid, pid);
+
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
-  if (vid == 0x046D && pid == 0xC52B) { //MX Master 3
+  if (vid == 0x046D && (pid == 0xC52B || pid == 0xC548)) { //MX Master 3 or 3S
     if (itf_protocol == HID_ITF_PROTOCOL_MOUSE) {
       tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_REPORT); //Set Mouse to Report Protocol get pan
+      //chprintf((BaseSequentialStream*)&SIOD0,"REPORT PROTOCOL\n");
     }
   }
 
@@ -124,23 +127,47 @@ static void process_mouse_report(uint8_t dev_addr, uint8_t instance, uint8_t con
     uint16_t vid, pid;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
 
-    if (vid == 0x046D && pid == 0xC52B) { //MX Master 3
+    if (vid == 0x046D && (pid == 0xC52B || pid == 0xC548)) { //MX Master 3 or 3S
       if (report[0] == 0x02) {
-
-        int8_t ext_x = report[3];
-        int8_t ext_y = (report[4]>>4) | (report[5]<<4);
-
-        //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", ext_x, ext_y);
-        //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", CONSTRAIN_HID_XY(ext_x), CONSTRAIN_HID_XY(ext_y));
-
         report_mouse_t mouse;
+        if (pid == 0xC52B) { //MX Master 3
 
-        mouse.buttons = report[1];
+            int8_t ext_x = report[3];
+            int8_t ext_y = (report[4]>>4) | (report[5]<<4);
 
-        mouse.x = CONSTRAIN_HID_XY(ext_x);
-        mouse.y = CONSTRAIN_HID_XY(ext_y);
-        mouse.v = report[6];
-        mouse.h = -report[7];
+            //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", ext_x, ext_y);
+            //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", CONSTRAIN_HID_XY(ext_x), CONSTRAIN_HID_XY(ext_y));
+
+
+            mouse.buttons = report[1];
+
+            mouse.x = CONSTRAIN_HID_XY(ext_x);
+            mouse.y = CONSTRAIN_HID_XY(ext_y);
+            mouse.v = report[6];
+            mouse.h = -report[7];
+
+        } else if (pid == 0xC548) { //MX Master 3S
+
+            int16_t ext_x = (report[3]) | (report[4]<<8);
+            int16_t ext_y = (report[5]) | (report[6]<<8);
+
+            //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", ext_x, ext_y);
+            //chprintf((BaseSequentialStream*)&SIOD0,"X:%d Y:%d\n", CONSTRAIN_HID_XY(ext_x), CONSTRAIN_HID_XY(ext_y));
+
+            int8_t prev_buttons = pointing_device_get_report().buttons;
+            //chprintf((BaseSequentialStream*)&SIOD0,"B:%x\n", prev_buttons);
+            mouse.buttons = report[1];
+            if (!(prev_buttons & 0x20) && (mouse.buttons & 0x20)) {
+                //chprintf((BaseSequentialStream*)&SIOD0,"Switch\n"); //Thumb button
+            }
+
+            mouse.x = CONSTRAIN_HID_XY(ext_x);
+            mouse.y = CONSTRAIN_HID_XY(ext_y);
+            mouse.v = report[7];
+            mouse.h = -report[8];
+
+        }
+
 
         chSysLock();
         pointing_device_set_report(mouse);
@@ -170,9 +197,9 @@ static void process_kbd_report(uint8_t dev_addr, uint8_t const * report)
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
   //chprintf((BaseSequentialStream*)&SIOD0,"HID Interface:%u Report received\n", instance);
-  //for (uint16_t i=0; i<len+2; i++) {
+  for (uint16_t i=0; i<len+2; i++) {
     //chprintf((BaseSequentialStream*)&SIOD0,"%02x ", report[i]);
-  //}
+  }
   //chprintf((BaseSequentialStream*)&SIOD0,"\n");
 
   (void) len;
