@@ -28,7 +28,7 @@
 #include "transactions.h"
 #include "transport.h"
 #include "transaction_id_define.h"
-#include "split_util.h"
+#include "switch_util.h"
 #include "synchronization_util.h"
 
 #ifdef POINTING_DEVICE_ENABLE
@@ -148,46 +148,89 @@ inline static bool send_if_data_mismatch(int8_t trans_id, uint32_t *last_update,
 ////////////////////////////////////////////////////
 // Matrix
 
-static bool matrix_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+static bool master_matrix_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+    static uint32_t last_update = 0;
+
+    split_shmem->matrix.checksum = crc8(split_shmem->matrix.matrix, sizeof(split_shmem->matrix.matrix));
+    bool okay = send_if_data_mismatch(PUT_MASTER_MATRIX_CHECKSUM, &last_update, master_matrix, &split_shmem->matrix.checksum, sizeof(split_shmem->matrix.checksum));
+     if (okay) {
+        okay &= send_if_condition(PUT_MASTER_MATRIX, &last_update, master_matrix, split_shmem->matrix.matrix, sizeof(split_shmem->matrix.matrix));
+    }
+    return okay;
+}
+
+static void master_matrix_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
     static uint32_t     last_update                    = 0;
     static matrix_row_t last_matrix[MATRIX_ROWS] = {0}; // last successfully-read matrix, so we can replicate if there are checksum errors
     matrix_row_t        temp_matrix[MATRIX_ROWS];       // holding area while we test whether or not checksum is correct
 
-    bool okay = read_if_checksum_mismatch(PUT_MASTER_MATRIX_CHECKSUM, PUT_MASTER_MATRIX_DATA, &last_update, temp_matrix, split_shmem->mmatrix.matrix, sizeof(split_shmem->mmatrix.matrix));
+    bool okay = read_if_checksum_mismatch(PUT_MASTER_MATRIX_CHECKSUM, PUT_MASTER_MATRIX, &last_update, temp_matrix, split_shmem->matrix.matrix, sizeof(split_shmem->matrix.matrix));
     if (okay) {
         // Checksum matches the received data, save as the last matrix state
         memcpy(last_matrix, temp_matrix, sizeof(temp_matrix));
     }
     // Copy out the last-known-good matrix state to the matrix
     memcpy(slave_matrix, last_matrix, sizeof(last_matrix));
-    return okay;
-}
-
-static void matrix_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    memcpy(split_shmem->mmatrix.matrix, master_matrix, sizeof(split_shmem-mmatrix.matrix));
-    split_shmem->mmatrix.checksum = crc8(split_shmem->mmatrix.matrix, sizeof(split_shmem->mmatrix.matrix));
 }
 
 // clang-format off
 #define TRANSACTIONS_MASTER_MATRIX_MASTER() TRANSACTION_HANDLER_MASTER(master_matrix)
 #define TRANSACTIONS_MASTER_MATRIX_SLAVE() TRANSACTION_HANDLER_SLAVE_AUTOLOCK(master_matrix)
 #define TRANSACTIONS_MASTER_MATRIX_REGISTRATIONS \
-    [PUT_MASTER_MATRIX_CHECKSUM] = trans_initiator2target_initializer(mmatrix.checksum), \
-    [PUT_MASTER_MATRIX]     = trans_initiator2target_initializer(mmatrix.matrix),
+    [PUT_MASTER_MATRIX_CHECKSUM] = trans_initiator2target_initializer(matrix.checksum), \
+    [PUT_MASTER_MATRIX]     = trans_initiator2target_initializer(matrix.matrix),
 // clang-format on
+
+////////////////////////////////////////////////////
+// POINTING
+
+extern const pointing_device_driver_t pointing_device_driver;
+
+static bool pointing_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+    static uint32_t last_update = 0;
+
+    split_pointing_sync_t pointing;
+    memcpy(&pointing, &split_shmem->pointing, sizeof(split_pointing_sync_t));
+
+    pointing.report = pointing_device_driver.get_report((report_mouse_t){0});
+    // Now update the checksum given that the pointing has been written to
+    pointing.checksum = crc8(&pointing.report, sizeof(report_mouse_t));
+
+    memcpy(&split_shmem->pointing, &pointing, sizeof(split_pointing_sync_t));
+
+    bool okay = send_if_data_mismatch(PUT_POINTING_CHECKSUM, &last_update, master_matrix, &split_shmem->pointing.checksum, sizeof(split_shmem->pointing.checksum));
+     if (okay) {
+        okay &= send_if_condition(PUT_POINTING_DATA, &last_update, master_matrix, &split_shmem->pointing.report, sizeof(split_shmem->pointing.report));
+    }
+    return okay;
+}
+
+static void pointing_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+    static uint32_t last_update     = 0;
+    report_mouse_t  temp_state;
+    bool            okay = read_if_checksum_mismatch(PUT_POINTING_CHECKSUM, PUT_POINTING_DATA, &last_update, &temp_state, &split_shmem->pointing.report, sizeof(temp_state));
+    if (okay) pointing_device_set_report(temp_state);
+}
+
+#    define TRANSACTIONS_POINTING_MASTER() TRANSACTION_HANDLER_MASTER(pointing)
+#    define TRANSACTIONS_POINTING_SLAVE() TRANSACTION_HANDLER_SLAVE_AUTOLOCK(pointing)
+#    define TRANSACTIONS_POINTING_REGISTRATIONS [PUT_POINTING_CHECKSUM] = trans_initiator2target_initializer(pointing.checksum), [PUT_POINTING_DATA] = trans_initiator2target_initializer(pointing.report),
+
 
 ////////////////////////////////////////////////////
 // LED state
 
-static bool led_state_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    static uint32_t last_update = 0;
-    uint8_t         led_state   = host_keyboard_leds();
-    return send_if_data_mismatch(GET_LED_STATE, &last_update, &led_state, &split_shmem->led_state, sizeof(led_state));
-}
-
-static void led_state_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+static bool led_state_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
     void set_split_host_keyboard_leds(uint8_t led_state);
     set_split_host_keyboard_leds(split_shmem->led_state);
+    return true;
+}
+
+
+static void led_state_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
+    split_shmem->led_state = host_keyboard_leds();
+    memcpy(&split_shmem->led_state, slave_matrix, sizeof(split_shmem->led_state));
+
 }
 
 #    define TRANSACTIONS_LED_STATE_MASTER() TRANSACTION_HANDLER_MASTER(led_state)
@@ -195,199 +238,7 @@ static void led_state_handlers_master(matrix_row_t master_matrix[], matrix_row_t
 #    define TRANSACTIONS_LED_STATE_REGISTRATIONS [GET_LED_STATE] = trans_target2initiator_initializer(led_state),
 
 ////////////////////////////////////////////////////
-// POINTING
 
-static bool pointing_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-
-    static uint32_t last_update     = 0;
-    report_mouse_t  temp_state;
-    bool            okay = read_if_checksum_mismatch(PUT_POINTING_CHECKSUM, PUT_POINTING_DATA, &last_update, &temp_state, &split_shmem->pointing.report, sizeof(temp_state));
-    if (okay) pointing_device_set_shared_report(temp_state);
-    temp_cpi = pointing_device_get_shared_cpi();
-    if (temp_cpi) {
-        split_shmem->pointing.cpi = temp_cpi;
-        okay                      = send_if_condition(PUT_POINTING_CPI, &last_cpi_update, last_cpi != temp_cpi, &split_shmem->pointing.cpi, sizeof(split_shmem->pointing.cpi));
-        if (okay) {
-            last_cpi = temp_cpi;
-        }
-    }
-    return okay;
-}
-
-extern const pointing_device_driver_t pointing_device_driver;
-
-static void pointing_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-#    if defined(POINTING_DEVICE_LEFT)
-    if (!is_keyboard_left()) {
-        return;
-    }
-#    elif defined(POINTING_DEVICE_RIGHT)
-    if (is_keyboard_left()) {
-        return;
-    }
-#    endif
-#    if (POINTING_DEVICE_TASK_THROTTLE_MS > 0)
-    static uint32_t last_exec = 0;
-    if (timer_elapsed32(last_exec) < POINTING_DEVICE_TASK_THROTTLE_MS) {
-        return;
-    }
-    last_exec = timer_read32();
-#    endif
-
-    uint16_t temp_cpi = !pointing_device_driver.get_cpi ? 0 : pointing_device_driver.get_cpi(); // check for NULL
-
-    split_shared_memory_lock();
-    split_slave_pointing_sync_t pointing;
-    memcpy(&pointing, &split_shmem->pointing, sizeof(split_slave_pointing_sync_t));
-    split_shared_memory_unlock();
-
-    if (pointing.cpi && pointing.cpi != temp_cpi && pointing_device_driver.set_cpi) {
-        pointing_device_driver.set_cpi(pointing.cpi);
-    }
-
-    pointing.report = pointing_device_driver.get_report((report_mouse_t){0});
-    // Now update the checksum given that the pointing has been written to
-    pointing.checksum = crc8(&pointing.report, sizeof(report_mouse_t));
-
-    split_shared_memory_lock();
-    memcpy(&split_shmem->pointing, &pointing, sizeof(split_slave_pointing_sync_t));
-    split_shared_memory_unlock();
-}
-
-#    define TRANSACTIONS_POINTING_MASTER() TRANSACTION_HANDLER_MASTER(pointing)
-#    define TRANSACTIONS_POINTING_SLAVE() TRANSACTION_HANDLER_SLAVE(pointing)
-#    define TRANSACTIONS_POINTING_REGISTRATIONS [PUT_POINTING_CHECKSUM] = trans_initiator2target_initializer(pointing.checksum), [PUT_POINTING_DATA] = trans_initiator2target_initializer(pointing.report),
-
-////////////////////////////////////////////////////
-// WATCHDOG
-
-#if defined(SPLIT_WATCHDOG_ENABLE)
-
-static bool watchdog_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    bool okay = true;
-    if (!split_watchdog_check()) {
-        okay = transport_write(PUT_WATCHDOG, &okay, sizeof(okay));
-        split_watchdog_update(okay);
-    }
-    return okay;
-}
-
-static void watchdog_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    split_watchdog_update(split_shmem->watchdog_pinged);
-}
-
-#    define TRANSACTIONS_WATCHDOG_MASTER() TRANSACTION_HANDLER_MASTER(watchdog)
-#    define TRANSACTIONS_WATCHDOG_SLAVE() TRANSACTION_HANDLER_SLAVE_AUTOLOCK(watchdog)
-#    define TRANSACTIONS_WATCHDOG_REGISTRATIONS [PUT_WATCHDOG] = trans_initiator2target_initializer(watchdog_pinged),
-
-#else // defined(SPLIT_WATCHDOG_ENABLE)
-
-#    define TRANSACTIONS_WATCHDOG_MASTER()
-#    define TRANSACTIONS_WATCHDOG_SLAVE()
-#    define TRANSACTIONS_WATCHDOG_REGISTRATIONS
-
-#endif // defined(SPLIT_WATCHDOG_ENABLE)
-
-#if defined(HAPTIC_ENABLE) && defined(SPLIT_HAPTIC_ENABLE)
-
-uint8_t                split_haptic_play = 0xFF;
-extern haptic_config_t haptic_config;
-
-static bool haptic_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    static uint32_t           last_update = 0;
-    split_slave_haptic_sync_t haptic_sync;
-
-    memcpy(&haptic_sync.haptic_config, &haptic_config, sizeof(haptic_config_t));
-    haptic_sync.haptic_play = split_haptic_play;
-
-    bool okay = send_if_data_mismatch(PUT_HAPTIC, &last_update, &haptic_sync, &split_shmem->haptic_sync, sizeof(haptic_sync));
-
-    split_haptic_play = 0xFF;
-
-    return okay;
-}
-
-static void haptic_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    memcpy(&haptic_config, &split_shmem->haptic_sync.haptic_config, sizeof(haptic_config_t));
-
-    if (split_shmem->haptic_sync.haptic_play != 0xFF) {
-        haptic_set_mode(split_shmem->haptic_sync.haptic_play);
-        haptic_play();
-    }
-}
-
-// clang-format off
-#    define TRANSACTIONS_HAPTIC_MASTER() TRANSACTION_HANDLER_MASTER(haptic)
-#    define TRANSACTIONS_HAPTIC_SLAVE() TRANSACTION_HANDLER_SLAVE(haptic)
-#    define TRANSACTIONS_HAPTIC_REGISTRATIONS [PUT_HAPTIC] = trans_initiator2target_initializer(haptic_sync),
-// clang-format on
-
-#else // defined(HAPTIC_ENABLE) && defined(SPLIT_HAPTIC_ENABLE)
-
-#    define TRANSACTIONS_HAPTIC_MASTER()
-#    define TRANSACTIONS_HAPTIC_SLAVE()
-#    define TRANSACTIONS_HAPTIC_REGISTRATIONS
-
-#endif // defined(HAPTIC_ENABLE) && defined(SPLIT_HAPTIC_ENABLE)
-
-#if defined(SPLIT_ACTIVITY_ENABLE)
-
-static bool activity_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    static uint32_t             last_update = 0;
-    split_slave_activity_sync_t activity_sync;
-    activity_sync.matrix_timestamp          = last_matrix_activity_time();
-    activity_sync.encoder_timestamp         = last_encoder_activity_time();
-    activity_sync.pointing_device_timestamp = last_pointing_device_activity_time();
-    return send_if_data_mismatch(PUT_ACTIVITY, &last_update, &activity_sync, &split_shmem->activity_sync, sizeof(activity_sync));
-}
-
-static void activity_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    set_activity_timestamps(split_shmem->activity_sync.matrix_timestamp, split_shmem->activity_sync.encoder_timestamp, split_shmem->activity_sync.pointing_device_timestamp);
-}
-
-// clang-format off
-#    define TRANSACTIONS_ACTIVITY_MASTER() TRANSACTION_HANDLER_MASTER(activity)
-#    define TRANSACTIONS_ACTIVITY_SLAVE() TRANSACTION_HANDLER_SLAVE_AUTOLOCK(activity)
-#    define TRANSACTIONS_ACTIVITY_REGISTRATIONS [PUT_ACTIVITY] = trans_initiator2target_initializer(activity_sync),
-// clang-format on
-
-#else // defined(SPLIT_ACTIVITY_ENABLE)
-
-#    define TRANSACTIONS_ACTIVITY_MASTER()
-#    define TRANSACTIONS_ACTIVITY_SLAVE()
-#    define TRANSACTIONS_ACTIVITY_REGISTRATIONS
-
-#endif // defined(SPLIT_ACTIVITY_ENABLE)
-
-////////////////////////////////////////////////////
-// Detected OS
-
-#if defined(OS_DETECTION_ENABLE) && defined(SPLIT_DETECTED_OS_ENABLE)
-
-static bool detected_os_handlers_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    static uint32_t last_detected_os_update = 0;
-    os_variant_t    detected_os             = detected_host_os();
-    bool            okay                    = send_if_condition(PUT_DETECTED_OS, &last_detected_os_update, (detected_os != split_shmem->detected_os), &detected_os, sizeof(os_variant_t));
-    return okay;
-}
-
-static void detected_os_handlers_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    slave_update_detected_host_os(split_shmem->detected_os);
-}
-
-#    define TRANSACTIONS_DETECTED_OS_MASTER() TRANSACTION_HANDLER_MASTER(detected_os)
-#    define TRANSACTIONS_DETECTED_OS_SLAVE() TRANSACTION_HANDLER_SLAVE_AUTOLOCK(detected_os)
-#    define TRANSACTIONS_DETECTED_OS_REGISTRATIONS [PUT_DETECTED_OS] = trans_initiator2target_initializer(detected_os),
-
-#else // defined(OS_DETECTION_ENABLE) && defined(SPLIT_DETECTED_OS_ENABLE)
-
-#    define TRANSACTIONS_DETECTED_OS_MASTER()
-#    define TRANSACTIONS_DETECTED_OS_SLAVE()
-#    define TRANSACTIONS_DETECTED_OS_REGISTRATIONS
-
-#endif // defined(OS_DETECTION_ENABLE) && defined(SPLIT_DETECTED_OS_ENABLE)
-
-////////////////////////////////////////////////////
 
 split_transaction_desc_t split_transaction_table[NUM_TOTAL_TRANSACTIONS] = {
     // Set defaults
@@ -398,26 +249,10 @@ split_transaction_desc_t split_transaction_table[NUM_TOTAL_TRANSACTIONS] = {
 #endif // USE_I2C
 
     // clang-format off
-    TRANSACTIONS_SLAVE_MATRIX_REGISTRATIONS
     TRANSACTIONS_MASTER_MATRIX_REGISTRATIONS
-    TRANSACTIONS_ENCODERS_REGISTRATIONS
-    TRANSACTIONS_SYNC_TIMER_REGISTRATIONS
-    TRANSACTIONS_LAYER_STATE_REGISTRATIONS
     TRANSACTIONS_LED_STATE_REGISTRATIONS
-    TRANSACTIONS_MODS_REGISTRATIONS
-    TRANSACTIONS_BACKLIGHT_REGISTRATIONS
-    TRANSACTIONS_RGBLIGHT_REGISTRATIONS
-    TRANSACTIONS_LED_MATRIX_REGISTRATIONS
-    TRANSACTIONS_RGB_MATRIX_REGISTRATIONS
-    TRANSACTIONS_WPM_REGISTRATIONS
-    TRANSACTIONS_OLED_REGISTRATIONS
-    TRANSACTIONS_ST7565_REGISTRATIONS
     TRANSACTIONS_POINTING_REGISTRATIONS
-    TRANSACTIONS_WATCHDOG_REGISTRATIONS
-    TRANSACTIONS_HAPTIC_REGISTRATIONS
-    TRANSACTIONS_ACTIVITY_REGISTRATIONS
-    TRANSACTIONS_DETECTED_OS_REGISTRATIONS
-// clang-format on
+    // clang-format on
 
 #if defined(SPLIT_TRANSACTION_IDS_KB) || defined(SPLIT_TRANSACTION_IDS_USER)
         [PUT_RPC_INFO]  = trans_initiator2target_initializer_cb(rpc_info, slave_rpc_info_callback),
@@ -428,48 +263,16 @@ split_transaction_desc_t split_transaction_table[NUM_TOTAL_TRANSACTIONS] = {
 };
 
 bool transactions_master(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    TRANSACTIONS_SLAVE_MATRIX_MASTER();
     TRANSACTIONS_MASTER_MATRIX_MASTER();
-    TRANSACTIONS_ENCODERS_MASTER();
-    TRANSACTIONS_SYNC_TIMER_MASTER();
-    TRANSACTIONS_LAYER_STATE_MASTER();
     TRANSACTIONS_LED_STATE_MASTER();
-    TRANSACTIONS_MODS_MASTER();
-    TRANSACTIONS_BACKLIGHT_MASTER();
-    TRANSACTIONS_RGBLIGHT_MASTER();
-    TRANSACTIONS_LED_MATRIX_MASTER();
-    TRANSACTIONS_RGB_MATRIX_MASTER();
-    TRANSACTIONS_WPM_MASTER();
-    TRANSACTIONS_OLED_MASTER();
-    TRANSACTIONS_ST7565_MASTER();
     TRANSACTIONS_POINTING_MASTER();
-    TRANSACTIONS_WATCHDOG_MASTER();
-    TRANSACTIONS_HAPTIC_MASTER();
-    TRANSACTIONS_ACTIVITY_MASTER();
-    TRANSACTIONS_DETECTED_OS_MASTER();
     return true;
 }
 
 void transactions_slave(matrix_row_t master_matrix[], matrix_row_t slave_matrix[]) {
-    TRANSACTIONS_SLAVE_MATRIX_SLAVE();
     TRANSACTIONS_MASTER_MATRIX_SLAVE();
-    TRANSACTIONS_ENCODERS_SLAVE();
-    TRANSACTIONS_SYNC_TIMER_SLAVE();
-    TRANSACTIONS_LAYER_STATE_SLAVE();
     TRANSACTIONS_LED_STATE_SLAVE();
-    TRANSACTIONS_MODS_SLAVE();
-    TRANSACTIONS_BACKLIGHT_SLAVE();
-    TRANSACTIONS_RGBLIGHT_SLAVE();
-    TRANSACTIONS_LED_MATRIX_SLAVE();
-    TRANSACTIONS_RGB_MATRIX_SLAVE();
-    TRANSACTIONS_WPM_SLAVE();
-    TRANSACTIONS_OLED_SLAVE();
-    TRANSACTIONS_ST7565_SLAVE();
     TRANSACTIONS_POINTING_SLAVE();
-    TRANSACTIONS_WATCHDOG_SLAVE();
-    TRANSACTIONS_HAPTIC_SLAVE();
-    TRANSACTIONS_ACTIVITY_SLAVE();
-    TRANSACTIONS_DETECTED_OS_SLAVE();
 }
 
 #if defined(SPLIT_TRANSACTION_IDS_KB) || defined(SPLIT_TRANSACTION_IDS_USER)

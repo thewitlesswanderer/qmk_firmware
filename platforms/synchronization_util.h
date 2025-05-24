@@ -4,12 +4,12 @@
 #pragma once
 
 #if defined(PLATFORM_SUPPORTS_SYNCHRONIZATION)
-#    if defined(SPLIT_KEYBOARD)
+#    if defined(SPLIT_KEYBOARD) || defined(SWITCH_OUTPUT)
 void split_shared_memory_lock(void);
 void split_shared_memory_unlock(void);
 #    endif
 #else
-#    if defined(SPLIT_KEYBOARD)
+#    if defined(SPLIT_KEYBOARD) || defined(SWITCH_OUTPUT)
 inline void split_shared_memory_lock(void){};
 inline void split_shared_memory_unlock(void){};
 #    endif

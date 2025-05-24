@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "split_util.h"
+#include "switch_util.h"
 #include "matrix.h"
 #include "keyboard.h"
 #include "timer.h"

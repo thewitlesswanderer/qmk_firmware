@@ -4,7 +4,7 @@
 #include "synchronization_util.h"
 #include "ch.h"
 
-#if defined(SPLIT_KEYBOARD)
+#if defined(SPLIT_KEYBOARD) || defined(SWITCH_OUTPUT)
 static MUTEX_DECL(SPLIT_SHARED_MEMORY_MUTEX);
 
 /**

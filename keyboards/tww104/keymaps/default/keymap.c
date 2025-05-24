@@ -47,10 +47,10 @@ report_mouse_t pointing_device_driver_get_report(report_mouse_t mouse_report) {
 void keyboard_post_init_user(void) {
 
   //rgb_matrix_mode_noeeprom(RGB_MATRIX_RAINBOW_PINWHEELS);
-  rgb_matrix_sethsv_noeeprom(HSV_GREEN);
+  rgb_matrix_sethsv_noeeprom(HSV_CYAN);
 
-  set_status_led(0, RGB_CYAN);
-  set_status_led(1, RGB_MAGENTA);
+  set_status_led(0, RGB_GREEN);
+  set_status_led(1, RGB_RED);
   //set_status_led(2, RGB_CYAN);
   //set_status_led(3, RGB_CYAN);
   //set_status_led(4, RGB_CYAN);

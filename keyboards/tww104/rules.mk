@@ -25,6 +25,15 @@ SRC += secondary_core.c tusb_os_custom.c
 POINTING_DEVICE_ENABLE = yes
 POINTING_DEVICE_DRIVER = custom
 
+#SPLIT_KEYBOARD = yes
+
+QUANTUM_SRC += $(QUANTUM_DIR)/switch_common/switch_util.c
+QUANTUM_SRC += $(QUANTUM_DIR)/switch_common/transport.c
+QUANTUM_SRC += $(QUANTUM_DIR)/switch_common/transactions.c
+COMMON_VPATH += quantum/switch_common/
+
+SERIAL_DRIVER = usart
+
 SRC += lib/Pico-PIO-USB/src/pio_usb.c
 SRC += lib/Pico-PIO-USB/src/pio_usb_host.c
 SRC += lib/Pico-PIO-USB/src/usb_crc.c
